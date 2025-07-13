@@ -1,4 +1,3 @@
-# image_steganography_app.py
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
@@ -8,12 +7,30 @@ import string
 import smtplib, ssl
 from email.message import EmailMessage
 import mimetypes
+import webbrowser
+import sys
+import time
 
+# ------------------------------------------
+# Handle paths for PyInstaller executable
+# ------------------------------------------
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller .exe """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.abspath(relative_path)
+
+# ------------------------------------------
+# Constants
+# ------------------------------------------
 PASSWORD_FILE = "passwords.txt"
 UPLOAD_DIR = "output_images"
+PROJECT_INFO_HTML = resource_path("project_info.html")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ------------------------------------------
 # Utility functions
+# ------------------------------------------
 def generate_password(length=8):
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(length))
 
@@ -24,7 +41,6 @@ def send_password_via_email(sender_email, smtp_password, receiver_email, passwor
     message["To"] = receiver_email
     message.set_content(f"Your password to extract the hidden message is:\n\n{password}")
 
-    # Add image attachment
     mime_type, _ = mimetypes.guess_type(attachment_path)
     mime_type, mime_subtype = mime_type.split('/')
 
@@ -66,25 +82,35 @@ def hide_text_in_image(image_path, message):
         if idx >= len(binary_msg):
             break
 
-    out_path = os.path.join(UPLOAD_DIR, f"stego_{os.path.basename(image_path)}")
+    timestamp = int(time.time())
+    out_filename = f"stego_{timestamp}_{os.path.basename(image_path)}"
+    out_path = os.path.join(UPLOAD_DIR, out_filename)
     encoded.save(out_path)
 
     password = generate_password()
     with open(PASSWORD_FILE, 'a') as f:
-        f.write(f"{os.path.basename(out_path)}:{password}\n")
+        f.write(f"{out_filename}:{password}\n")
 
     return password, out_path
 
 def extract_text_from_image(image_path, password_input):
-    filename = os.path.basename(image_path)
+    filename = os.path.basename(image_path).strip()
+    password_input = password_input.strip()
     actual_password = None
+
     if os.path.exists(PASSWORD_FILE):
         with open(PASSWORD_FILE, 'r') as f:
             for line in f:
-                name, pw = line.strip().split(":", 1)
-                if filename == name:
-                    actual_password = pw
-                    break
+                try:
+                    name, pw = line.strip().split(":", 1)
+                    name = name.strip()
+                    pw = pw.strip()
+                    if filename == name:
+                        actual_password = pw
+                        break
+                except ValueError:
+                    continue
+
     if not actual_password:
         raise ValueError("No password found for this image.")
     if password_input != actual_password:
@@ -104,21 +130,24 @@ def extract_text_from_image(image_path, password_input):
     chars = [chr(int(binary_data[i:i+8], 2)) for i in range(0, len(binary_data), 8)]
     return ''.join(chars).split(chr(0))[0]
 
-# Tkinter GUI
+# ------------------------------------------
+# GUI
+# ------------------------------------------
 def create_main_window():
     root = tk.Tk()
     root.title("Image Steganography")
     root.geometry("500x400")
 
-    tk.Label(root, text="Image Steganography", font=("Arial", 18, "bold")).pack(pady=10)
+    title_label = tk.Label(root, text="Image Steganography", font=("Arial", 18, "bold"), fg="blue", cursor="hand2")
+    title_label.pack(pady=10)
+    title_label.bind("<Button-1>", lambda e: webbrowser.open_new(PROJECT_INFO_HTML))
 
-    # Display image under heading
     try:
-        img = Image.open("logo.png")  # Make sure logo.png exists in same folder
+        img = Image.open(resource_path("logo.png"))
         img = img.resize((200, 200))
         logo = ImageTk.PhotoImage(img)
         tk.Label(root, image=logo).pack(pady=5)
-        root.logo = logo  # prevent garbage collection
+        root.logo = logo
     except:
         tk.Label(root, text="[Logo image not found]", fg="gray").pack()
 
@@ -185,5 +214,8 @@ def open_extract_window():
 
     tk.Button(win, text="Extract Text", command=handle_extract, width=20).grid(row=2, column=1, pady=10)
 
+# ------------------------------------------
+# Run the App
+# ------------------------------------------
 if __name__ == "__main__":
     create_main_window()
